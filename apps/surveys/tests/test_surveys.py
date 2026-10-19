@@ -1,5 +1,6 @@
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
+from django.urls import reverse
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -9,32 +10,26 @@ from .base import SurveyTestCase
 
 
 class SurveyTests(SurveyTestCase):
-    def test_management_endpoints_are_removed(self):
+    def test_survey_endpoints_are_read_only(self):
         for path in (
-            "/api/v1/users/me/",
-            "/api/v1/surveys/",
+            reverse("survey-list"),
+            reverse("survey-detail", kwargs={"pk": self.survey.pk}),
             self.url,
-            self.url + "start/",
-            self.url + "statistics/",
-            self.url + "questions/",
-            self.url + "reorder-questions/",
         ):
-            with self.subTest(path=path):
-                self.assertEqual(self.client.get(path).status_code, 404)
-                self.assertEqual(self.client.post(path, {}, format="json").status_code, 404)
-        for method in (self.client.post, self.client.patch, self.client.delete):
-            self.assertEqual(method(self.url + "next-question/").status_code, 405)
+            for method in (self.client.post, self.client.patch, self.client.delete):
+                with self.subTest(path=path, method=method):
+                    self.assertEqual(method(path, {}, format="json").status_code, 405)
 
     def test_authentication_uses_real_tokens(self):
         self.client = APIClient()
-        self.assertEqual(self.client.get(self.url + "next-question/").status_code, 401)
+        self.assertEqual(self.client.get(self.url).status_code, 401)
         token = Token.objects.create(user=self.user)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
-        self.assertEqual(self.client.get(self.url + "next-question/").status_code, 200)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
 
     def test_empty_survey_cannot_start(self):
         self.survey.questions.all().delete()
-        self.assertEqual(self.client.get(self.url + "next-question/").status_code, 409)
+        self.assertEqual(self.client.get(self.url).status_code, 400)
 
     def test_positions_are_assigned_in_models(self):
         question = Question.objects.create(survey=self.survey, text="New")

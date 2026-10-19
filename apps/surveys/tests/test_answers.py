@@ -16,7 +16,7 @@ class AnswerTests(SurveyTestCase):
     def test_cannot_change_an_accepted_answer(self):
         pid = self.start()
         self.answer(pid, choice=self.yes)
-        self.assertEqual(self.answer(pid, choice=self.no).status_code, 409)
+        self.assertEqual(self.answer(pid, choice=self.no).status_code, 400)
 
     def test_validation_at_answer_boundary(self):
         pid = self.start()
@@ -30,7 +30,7 @@ class AnswerTests(SurveyTestCase):
             with self.subTest(kwargs=kwargs):
                 self.assertEqual(self.answer(pid, **kwargs).status_code, 400)
         self.assertEqual(
-            self.answer(pid, question=self.second, choice=self.second_yes).status_code, 409
+            self.answer(pid, question=self.second, choice=self.second_yes).status_code, 400
         )
         self.assertFalse(Answer.objects.exists())
 

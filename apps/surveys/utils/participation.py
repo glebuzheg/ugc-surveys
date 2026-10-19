@@ -4,7 +4,6 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from apps.surveys.api.exceptions import Conflict
 from apps.surveys.models import Answer, Choice, Participation
 from apps.surveys.utils.progress import unanswered_questions
 
@@ -28,12 +27,12 @@ def submit_answer(participation_id, user, data):
     if existing:
         if existing.choice_id == choice_id and existing.custom_text == custom_text:
             return existing, False
-        raise Conflict("answer_already_submitted", "An answer to this question already exists.")
+        raise ValidationError("An answer to this question already exists.")
     if participation.completed_at:
-        raise Conflict("participation_completed", "This participation is completed.")
+        raise ValidationError("This participation is completed.")
     question = unanswered_questions(participation.survey, participation).first()
     if question is None or question.pk != question_id:
-        raise Conflict("question_out_of_order", "Answer the current next question.")
+        raise ValidationError("Answer the current next question.")
     if choice_id is not None:
         if not Choice.objects.filter(pk=choice_id, question=question).exists():
             raise ValidationError({"choice": "Choice must belong to the current question."})

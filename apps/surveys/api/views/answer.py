@@ -1,9 +1,9 @@
 from django.db import IntegrityError
 from rest_framework import mixins
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
-from apps.surveys.api.exceptions import Conflict
 from apps.surveys.api.serializers.answer import AnswerSerializer
 from apps.surveys.utils.participation import submit_answer
 
@@ -21,9 +21,7 @@ class AnswerViewSet(mixins.CreateModelMixin, GenericViewSet):
         except IntegrityError as exc:
             if getattr(exc.__cause__, "sqlstate", None) != "23503":
                 raise
-            raise Conflict(
-                "structure_changed", "Question or choice was deleted; reload the survey."
-            ) from exc
+            raise ValidationError("Question or choice was deleted; reload the survey.") from exc
         # Input IDs are scalar fields; output uses the same shape without another FK lookup.
         return Response(
             {

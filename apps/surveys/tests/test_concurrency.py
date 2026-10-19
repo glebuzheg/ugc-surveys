@@ -3,6 +3,7 @@ from threading import Barrier, Event
 from unittest.mock import patch
 
 from django.db import connections
+from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.surveys.models import Answer, Choice, Participation, Question
@@ -11,7 +12,7 @@ from .base import SurveyTestCase
 
 
 class ConcurrencyTests(SurveyTestCase):
-    def test_choice_deleted_between_validation_and_insert_is_a_conflict(self):
+    def test_choice_deleted_between_validation_and_insert_is_a_bad_request(self):
         pid = self.start()
         checked, deleted = Event(), Event()
         original_filter = Choice.objects.filter
@@ -48,21 +49,20 @@ class ConcurrencyTests(SurveyTestCase):
             deletion = executor.submit(delete_choice)
             response = self.answer(pid, choice=self.yes)
             self.assertEqual(deletion.result(timeout=15), 204)
-        self.assertEqual(response.status_code, 409, response.data)
-        self.assertEqual(response.data["code"], "structure_changed")
+        self.assertEqual(response.status_code, 400, response.data)
         self.assertFalse(Answer.objects.exists())
 
-    def concurrent_post(self, path, payloads, user=None):
+    def concurrent_request(self, path, payloads, method="post"):
         barrier = Barrier(len(payloads))
 
         def request(payload):
             try:
                 client = APIClient()
-                client.force_authenticate(user or self.user)
+                client.force_authenticate(self.user)
                 barrier.wait(timeout=10)
                 response = (
                     client.get(path)
-                    if path.endswith("next-question/")
+                    if method == "get"
                     else client.post(path, payload, format="json")
                 )
                 return response.status_code, response.data
@@ -74,37 +74,37 @@ class ConcurrencyTests(SurveyTestCase):
             return [future.result(timeout=20) for future in futures]
 
     def test_concurrent_starts_have_one_participation(self):
-        responses = self.concurrent_post(self.url + "next-question/", [{}, {}])
+        responses = self.concurrent_request(self.url, [{}, {}], method="get")
         self.assertEqual(sorted(code for code, _ in responses), [200, 200])
         self.assertEqual(Participation.objects.count(), 1)
 
     def test_concurrent_identical_answers_create_one_row(self):
         pid = self.start()
         payload = {"question": self.first.pk, "choice": self.yes.pk}
-        responses = self.concurrent_post(
-            f"/api/v1/participations/{pid}/answers/", [payload, payload]
+        responses = self.concurrent_request(
+            reverse("submit-answer", kwargs={"participation_pk": pid}), [payload, payload]
         )
         self.assertEqual(sorted(code for code, _ in responses), [200, 201])
         self.assertEqual(Answer.objects.count(), 1)
 
     def test_concurrent_conflicting_answers_are_not_overwritten(self):
         pid = self.start()
-        responses = self.concurrent_post(
-            f"/api/v1/participations/{pid}/answers/",
+        responses = self.concurrent_request(
+            reverse("submit-answer", kwargs={"participation_pk": pid}),
             [
                 {"question": self.first.pk, "choice": self.yes.pk},
                 {"question": self.first.pk, "choice": self.no.pk},
             ],
         )
-        self.assertEqual(sorted(code for code, _ in responses), [201, 409])
+        self.assertEqual(sorted(code for code, _ in responses), [201, 400])
         self.assertEqual(Answer.objects.count(), 1)
 
     def test_concurrent_last_answer_sets_one_completion_timestamp(self):
         pid = self.start()
         self.answer(pid, choice=self.yes)
         payload = {"question": self.second.pk, "choice": self.second_yes.pk}
-        responses = self.concurrent_post(
-            f"/api/v1/participations/{pid}/answers/", [payload, payload]
+        responses = self.concurrent_request(
+            reverse("submit-answer", kwargs={"participation_pk": pid}), [payload, payload]
         )
         self.assertEqual(sorted(code for code, _ in responses), [200, 201])
         self.assertEqual(Answer.objects.count(), 2)
