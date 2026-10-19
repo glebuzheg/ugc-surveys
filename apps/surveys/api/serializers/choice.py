@@ -7,4 +7,4 @@ class ChoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Choice
         fields = ["id", "question", "text", "position"]
-        read_only_fields = ["id", "question", "position"]
+        read_only_fields = fields

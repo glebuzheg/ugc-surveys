@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.db import connections
 from rest_framework.test import APIClient
 
-from apps.surveys.models import Answer, Choice, Participation
+from apps.surveys.models import Answer, Choice, Participation, Question
 
 from .base import SurveyTestCase
 
@@ -35,11 +35,8 @@ class ConcurrencyTests(SurveyTestCase):
             try:
                 if not checked.wait(timeout=10):
                     raise TimeoutError("Answer did not validate choice")
-                client = APIClient()
-                client.force_authenticate(self.author)
-                return client.delete(
-                    self.url + f"questions/{self.first.pk}/choices/{self.yes.pk}/",
-                ).status_code
+                Choice.objects.get(pk=self.yes.pk).delete()
+                return 204
             finally:
                 deleted.set()
                 connections.close_all()
@@ -63,7 +60,11 @@ class ConcurrencyTests(SurveyTestCase):
                 client = APIClient()
                 client.force_authenticate(user or self.user)
                 barrier.wait(timeout=10)
-                response = client.post(path, payload, format="json")
+                response = (
+                    client.get(path)
+                    if path.endswith("next-question/")
+                    else client.post(path, payload, format="json")
+                )
                 return response.status_code, response.data
             finally:
                 connections.close_all()
@@ -73,8 +74,8 @@ class ConcurrencyTests(SurveyTestCase):
             return [future.result(timeout=20) for future in futures]
 
     def test_concurrent_starts_have_one_participation(self):
-        responses = self.concurrent_post(self.url + "start/", [{}, {}])
-        self.assertEqual(sorted(code for code, _ in responses), [200, 201])
+        responses = self.concurrent_post(self.url + "next-question/", [{}, {}])
+        self.assertEqual(sorted(code for code, _ in responses), [200, 200])
         self.assertEqual(Participation.objects.count(), 1)
 
     def test_concurrent_identical_answers_create_one_row(self):
@@ -110,27 +111,15 @@ class ConcurrencyTests(SurveyTestCase):
         self.assertIsNotNone(Participation.objects.get(pk=pid).completed_at)
 
     def test_concurrent_question_appends_have_distinct_positions(self):
-        responses = self.concurrent_post(
-            self.url + "questions/",
-            [
-                {"text": "One"},
-                {"text": "Two"},
-            ],
-            user=self.author,
-        )
-        self.assertEqual([code for code, _ in responses], [201, 201])
-        self.assertEqual(
-            list(self.survey.questions.values_list("position", flat=True)), [2, 9, 10, 11]
-        )
+        barrier = Barrier(2)
 
-    def test_concurrent_reorders_leave_a_complete_permutation(self):
-        responses = self.concurrent_post(
-            self.url + "reorder-questions/",
-            [
-                {"ids": [self.first.pk, self.second.pk]},
-                {"ids": [self.second.pk, self.first.pk]},
-            ],
-            user=self.author,
-        )
-        self.assertEqual([code for code, _ in responses], [200, 200])
-        self.assertEqual(list(self.survey.questions.values_list("position", flat=True)), [1, 2])
+        def append(text):
+            try:
+                barrier.wait(timeout=10)
+                return Question.objects.create(survey=self.survey, text=text).position
+            finally:
+                connections.close_all()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(append, ["One", "Two"]))
+        self.assertEqual(sorted(results), [10, 11])

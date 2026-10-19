@@ -26,9 +26,9 @@ class SurveyTestCase(APITransactionTestCase):
         self.client.force_authenticate(self.user)
 
     def start(self):
-        response = self.client.post(self.url + "start/")
-        self.assertIn(response.status_code, [200, 201], response.data)
-        return response.data["id"]
+        response = self.client.get(self.url + "next-question/")
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data["participation_id"]
 
     def answer(self, participation_id, question=None, choice=None, **kwargs):
         data = {"question": (question or self.first).pk, **kwargs}

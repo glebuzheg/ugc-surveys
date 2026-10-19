@@ -7,14 +7,14 @@ from .base import SurveyTestCase
 
 
 class ProgressTests(SurveyTestCase):
-    def test_preview_does_not_create_participation(self):
+    def test_first_question_starts_participation(self):
         response = self.client.get(self.url + "next-question/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["state"], "not_started")
-        self.assertIsNone(response.data["participation_id"])
+        self.assertEqual(response.data["state"], "in_progress")
+        self.assertIsNotNone(response.data["participation_id"])
         self.assertEqual(response.data["question"]["id"], self.first.pk)
         self.assertEqual(response.data["progress"], {"answered": 0, "total": 2})
-        self.assertFalse(Participation.objects.exists())
+        self.assertEqual(Participation.objects.count(), 1)
 
     def test_resume_complete_and_repeat_start(self):
         pid = self.start()

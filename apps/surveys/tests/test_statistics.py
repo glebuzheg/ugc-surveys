@@ -5,6 +5,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.surveys.models import Answer, Choice, Participation, Question
+from apps.surveys.utils.statistics import survey_statistics
 
 from .base import SurveyTestCase
 
@@ -15,13 +16,12 @@ class StatisticsTests(SurveyTestCase):
         self.client.force_authenticate(self.author)
 
     def test_empty_statistics(self):
-        response = self.client.get(self.url + "statistics/")
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data["started_count"], 0)
-        self.assertEqual(response.data["completion_rate"], 0)
-        self.assertIsNone(response.data["average_completion_seconds"])
-        self.assertEqual(response.data["questions"][0]["popular_choice_ids"], [])
-        self.assertEqual(response.data["questions"][0]["choices"][0]["count"], 0)
+        data = survey_statistics(self.survey)
+        self.assertEqual(data["started_count"], 0)
+        self.assertEqual(data["completion_rate"], 0)
+        self.assertIsNone(data["average_completion_seconds"])
+        self.assertEqual(data["questions"][0]["popular_choice_ids"], [])
+        self.assertEqual(data["questions"][0]["choices"][0]["count"], 0)
 
     def test_aggregates_do_not_multiply_counts_and_include_incomplete_answers(self):
         now = timezone.now()
@@ -36,7 +36,7 @@ class StatisticsTests(SurveyTestCase):
             Answer.objects.create(participation=p, question=self.second, choice=self.second_yes)
         active = Participation.objects.create(user=self.author, survey=self.survey, started_at=now)
         Answer.objects.create(participation=active, question=self.first, custom_text="Only in soup")
-        data = self.client.get(self.url + "statistics/").data
+        data = survey_statistics(self.survey)
         self.assertEqual(data["started_count"], 3)
         self.assertEqual(data["completed_count"], 2)
         self.assertEqual(data["in_progress_count"], 1)
@@ -49,17 +49,13 @@ class StatisticsTests(SurveyTestCase):
         self.assertAlmostEqual(first["choices"][0]["share"], 1 / 3)
         self.assertNotIn("Only in soup", str(data))
 
-    def test_other_user_cannot_read_statistics(self):
-        self.client.force_authenticate(self.user)
-        self.assertEqual(self.client.get(self.url + "statistics/").status_code, 404)
-
     def test_statistics_have_no_per_question_queries(self):
         with CaptureQueriesContext(connection) as initial:
-            self.client.get(self.url + "statistics/")
+            survey_statistics(self.survey)
         for n in range(10, 20):
             question = Question.objects.create(survey=self.survey, text=f"Extra {n}", position=n)
             Choice.objects.create(question=question, text="Yes", position=1)
         with CaptureQueriesContext(connection) as expanded:
-            self.client.get(self.url + "statistics/")
+            survey_statistics(self.survey)
         self.assertEqual(len(initial), len(expanded))
         self.assertLessEqual(len(expanded), 8)

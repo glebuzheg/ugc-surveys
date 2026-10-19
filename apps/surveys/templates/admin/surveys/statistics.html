@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<dl>
+  <dt>Начали</dt><dd>{{ statistics.started_count }}</dd>
+  <dt>Завершили</dt><dd>{{ statistics.completed_count }}</dd>
+  <dt>В процессе</dt><dd>{{ statistics.in_progress_count }}</dd>
+  <dt>Ответов</dt><dd>{{ statistics.answers_count }}</dd>
+  <dt>Доля завершений</dt><dd>{{ statistics.completion_rate|floatformat:2 }}</dd>
+  <dt>Среднее время, секунд</dt><dd>{{ statistics.average_completion_seconds|default_if_none:"—" }}</dd>
+</dl>
+{% for question in statistics.questions %}
+  <h2>{{ question.text }}</h2>
+  <p>Ответов: {{ question.answers_count }}. Собственных: {{ question.custom_answers_count }}.</p>
+  <table>
+    <thead><tr><th>Вариант</th><th>Ответов</th><th>Доля</th><th>Популярный</th></tr></thead>
+    <tbody>
+    {% for choice in question.choices %}
+      <tr><td>{{ choice.text }}</td><td>{{ choice.count }}</td>
+        <td>{{ choice.share|floatformat:2 }}</td>
+        <td>{% if choice.id in question.popular_choice_ids %}Да{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endfor %}
+{% endblock %}

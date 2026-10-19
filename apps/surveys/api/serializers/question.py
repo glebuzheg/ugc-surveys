@@ -5,15 +5,10 @@ from apps.surveys.models import Question
 from .choice import ChoiceSerializer
 
 
-class QuestionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Question
-        fields = ["id", "survey", "text", "position", "allow_custom_answer"]
-        read_only_fields = ["id", "survey", "position"]
-
-
-class NextQuestionSerializer(QuestionSerializer):
+class NextQuestionSerializer(serializers.ModelSerializer):
     choices = ChoiceSerializer(many=True, read_only=True)
 
-    class Meta(QuestionSerializer.Meta):
-        fields = [*QuestionSerializer.Meta.fields, "choices"]
+    class Meta:
+        model = Question
+        fields = ["id", "survey", "text", "position", "allow_custom_answer", "choices"]
+        read_only_fields = fields
